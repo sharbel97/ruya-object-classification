@@ -17,70 +17,80 @@
 using namespace std;
 using namespace cv;
 
-Mat frame;
-GLfloat angle = 0.0;
-GLuint texture;
-VideoCapture camera;
 
-int loadTexture() {
-    if (frame.data==NULL) return -1;
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+// openCV command line parser functions
+// Keys accepted by command line parser
+const char* keys = 
+{
+    "{help h usage ? | | print this message}"
+    "{@image || Image to process}"
+    "{@lightPattern || Image light pattern to apply to image input}"
+    "{lightMethod | 1 | Method to remove background light, 0 difference, 1 div }"
+    "{segMethod | 1 | Method to segment: 1 connected Components, 2 connected components with stats, 3 find Contours }"
+};
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_BGR, GL_UNSIGNED_BYTE, frame.data);
-    return 0;
-}
+Mat removeLight(Mat img, Mat pattern, int method) {
+    Mat aux;
+    // if method is normalization
 
-void on_opengl(void* param) {
-    glLoadIdentity();
+    if (method==1) {
+        // Require change our image to 32float for division
+        Mat img32, pattern32;
+        img.convertTo(img32, CV_32F);
+        pattern.convertTo(pattern32, CV_32F);
 
-    // Load frame texture
-    glBindTexture(GL_TEXTURE_2D, texture);
+        // Divide the image by the pattern
+        aux = 1-(img32/pattern32);
 
-    // Rotate plane before draw
-    glRotatef(angle, 1.0f, 1.0f, 1.0f);
-
-    // Create the plane and set the texture coordinates
-    glBegin(GL_QUADS);
-        // first point and coordinate texture
-    glVertex2d(-1.0,-1.0);
-    glTexCoord2d(0.0, 0.0);
-
-        // second point and coordinate texture
-    glTexCoord2d(1.0,0.0);
-    glVertex2d(+1.0,-1.0);
-
-    // third point and coordinate texture
-    glTexCoord2d(1.0, 1.0);
-    glVertex2d(+1.0,+1.0);
-
-    // last point and coordinate texture
-    glTexCoord2d(0.0,1.0);
-    glVertex2d(-1.0,+1.0);
-    glEnd();
-
-}
-
-int main(int argc, const char * argv[]) {
-    cout << getBuildInformation();
-
-    camera.open(0);
-    if (!camera.isOpened()) return -1;
-    namedWindow("OpenGL Camera", WINDOW_OPENGL);
-
-    glEnable(GL_TEXTURE_2D);
-    glGenTextures(1, &texture);
-    setOpenGlDrawCallback("OpenGL Camera", on_opengl);
-    while (waitKey(30)!='q') {
-        camera >> frame;
-        // create first textures
-        loadTexture();
-        updateWindow("OpenGL Camera");
-        angle+=4;
+        // convert 8bits format and scale
+        aux.convertTo(aux, CV_8U, 255);
+    } else {
+        aux = pattern-img;
     }
 
-    destroyAllWindows();
+    return aux;
+}
+
+Mat calculateLightPattern(Mat img) {
+    Mat pattern;
+    // Basic and effective way to calculate the light pattern from one image
+    blur(img, pattern, Size(img.cols/3,img.cols/3));
+    return pattern;
+}
+
+int main(int argc, const char** argv) {
+    CommandLineParser parser(argc, argv, keys); 
+    parser.about("PhotoTool v1.0.0"); 
+    // If requires help show
+    if (parser.has("help")) {
+        parser.printMessage();
+        return 0;
+    }
+
+    String img_file = parser.get<string>(0);
+    String light_pattern_file = parser.get<String>(1);
+    auto method_light = parser.get<int>("lightMethod");
+    auto method_seg = parser.get<int>("segMethod");
+
+    // Check if params are correctly parsed in his variables
+    if (!parser.check()) {
+        parser.printErrors();
+        return 0;
+    }
+
+    // Load image to process
+    Mat img = imread(img_file, 0);
+    if (img.data == NULL) {
+        cout << "Error loading image " << img_file << endl;
+        return 0;
+    }
+
+    Mat img_noise;
+    medianBlur(img, img_noise, 3);
+
+    imshow("image", img);
+
+    waitKey(0);
+
     return 0;
 }
